@@ -1,47 +1,33 @@
 #!/bin/sh
-D="/sys/class/gpio/"
-base=458
+
+GPIO_PINS_PATH="/sys/class/gpio/"
+GPIO_BASE_OFFSET=458
 
 #
 # 475 485 480 output
 # 471 484 477 input
 
-echo 475 > ${D}/export
-echo 484 > ${D}/export
+# Our raspberry is wired as follows:
+# White sensor:
+#   TRIG - GPIO22 (PIN15)
+#   ECHO - GPIO13 (PIN33)
+WHITE_TRIG_PIN=$((${GPIO_BASE_OFFSET} + 22))
+WHITE_ECHO_PIN=$((${GPIO_BASE_OFFSET} + 13))
 
-echo 477 > ${D}/export
-echo 485 > ${D}/export
+TRIG_PIN=${WHITE_TRIG_PIN}
+ECHO_PIN=${WHITE_ECHO_PIN}
 
-echo 480 > ${D}/export
-echo 471 > ${D}/export
+echo ${TRIG_PIN} > ${GPIO_PINS_PATH}/export
+echo ${ECHO_PIN} > ${GPIO_PINS_PATH}/export
 
-echo out > ${D}/gpio475/direction
-echo out > ${D}/gpio485/direction
-echo out > ${D}/gpio480/direction
-echo in >  ${D}/gpio471/direction
-echo in >  ${D}/gpio477/direction
-echo in >  ${D}/gpio484/direction
-
-# Green sonar
-OUT="475"
-IN="484"
-
-# blue sonar
-BLUE_IN="477"
-BLUE_OUT="485"
-
-# white sonar
-WHITE_IN="471"
-WHITE_OUT="480"
-#
-#
-#insmod ./ultrasonicnet.ko cpu=1 sleep_us=10
-#insmod ./ultrasonic.ko cpu=1 sleep_us=10
+echo out > ${GPIO_PINS_PATH}/gpio${TRIG_PIN}/direction
+echo in >  ${GPIO_PINS_PATH}/gpio${ECHO_PIN}/direction
 
 while [ 1 ]; do
-        echo 1 > /sys/class/gpio/gpio${WHITE_OUT}/value
-        sleep 0.0001
-        echo 0 > /sys/class/gpio/gpio${WHITE_OUT}/value
-        sleep 0.0001
-        cat /sys/class/gpio/gpio${WHITE_IN}/value
+        echo 1 > /sys/class/gpio/gpio${TRIG_PIN}/value
+        sleep 0.001
+        cat /sys/class/gpio/gpio${ECHO_PIN}/value
+        echo 0 > /sys/class/gpio/gpio${TRIG_PIN}/value
+        sleep 0.001
+        cat /sys/class/gpio/gpio${ECHO_PIN}/value
 done
