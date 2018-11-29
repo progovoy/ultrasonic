@@ -44,7 +44,7 @@ static inline long cycles_us(void)
     return t.tv_sec * 1000000 + t.tv_usec;
 }
 
-int trig(char *onoff, int uduration, int sensor_index)
+static inline int trig(char *onoff, int uduration, int sensor_index)
 {
     int b;
     int fd;
@@ -82,7 +82,7 @@ out:
     return err;
 }
 
-long wait_echo(char c, int sensor_index)
+static inline long wait_echo(char c, int sensor_index)
 {
     long err = -1;
     int fd = open(echo_paths[sensor_index], O_RDONLY);
@@ -135,13 +135,15 @@ int main(int argc, char *argv[])
 
     /* wait untill there is no zeroes and get the time */
     long start = wait_echo('0', WHITE_SENSOR_INDEX);
+
+    /* wait untill there is no ones and get the time */
+    long end  = wait_echo('1', WHITE_SENSOR_INDEX);
+
     if (start < 0){
         printf("Error in waiting for echo 0\n");
         return -1;
     }
 
-    /* wait untill there is no ones and get the time */
-    long end  = wait_echo('1', WHITE_SENSOR_INDEX);
     if (end < 0){
         printf("Error in waiting for echo 1\n");
         return -1;
