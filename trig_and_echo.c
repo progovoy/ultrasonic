@@ -8,105 +8,150 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
+#include <fcntl.h> 
 
-//const char *gpio_trig="/sys/class/gpio/gpio475/value"; // the trigger
-//const char *gpio_echo="/sys/class/gpio/gpio484/value";
+#define GPIO_PINS_PATH "/sys/class/gpio/"
+#define GPIO_BASE_OFFSET 458
 
-const char *gpio_trig="/sys/class/gpio/gpio480/value"; // the trigger
-const char *gpio_echo="/sys/class/gpio/gpio471/value"; // the echo
+/* cm/us */
+#define ULTRASONIC_SPEED_US 0.0343
+
+#define GPIO_WHITE_TRIG 22
+#define GPIO_WHITE_ECHO 13
+
+#define WHITE_TRIG_PIN (GPIO_BASE_OFFSET + GPIO_WHITE_TRIG)
+#define WHITE_ECHO_PIN (GPIO_BASE_OFFSET + GPIO_WHITE_ECHO)
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+const char* trig_paths[1] = { "/sys/class/gpio/gpio480/value" };
+const char* echo_paths[1] = { "/sys/class/gpio/gpio471/value" };
+
+#if 0
+const char* trig_paths[1] = { "/sys/class/gpio/gpio" STR(WHITE_TRIG_PIN) "/value" };
+const char* echo_paths[1] = { "/sys/class/gpio/gpio" STR(WHITE_ECHO_PIN) "/value" };
+#endif
+
+#define WHITE_SENSOR_INDEX 0
 
 static inline long cycles_us(void)
 {
-	struct timeval t;
+    struct timeval t;
 
-	gettimeofday(&t, NULL);
-	return t.tv_sec * 1000000 + t.tv_usec;
+    gettimeofday(&t, NULL);
+
+    return t.tv_sec * 1000000 + t.tv_usec;
 }
 
-int trig(char *onoff)
+int trig(char *onoff, int uduration, int sensor_index)
 {
-	int b;
-	int fd;
+    int b;
+    int fd;
+    int err = 0;
 
-	fd = open(gpio_trig, O_WRONLY);
-	if (fd < 0){
-		perror("Failed to open gpio485 file");
-		return -1;
-	}
-	
-	b = write(fd, onoff, 3);
-	if (b < 0){
-		perror("write:");
-		return -1;
-	}
-	close(fd);
-	return 0;
+    fd = open(trig_paths[sensor_index], O_WRONLY);
+    if (fd < 0){
+        perror("Failed to open file");
 
+        err = fd;
+        goto out;
+    }
+
+    b = write(fd, onoff, 3);
+    if (b < 0){
+        perror("write:");
+
+        err = b;
+        goto close_fd;
+    }
+
+    usleep(uduration);
+
+    b = write(fd, "0\n", 3);
+    if (b < 0){
+        perror("write:");
+
+        err = b;
+        goto close_fd;
+    }
+
+close_fd:
+    close(fd);
+out:
+    return err;
 }
 
-long wait_echo(char c)
+long wait_echo(char c, int sensor_index)
 {
-	long t = 0;
-        int b;
-        int fd;
-        char buf[32];
-wait:
-        fd = open(gpio_echo, O_RDONLY);
-        if (fd < 0){
-                perror("Failed to open gpio475 file");
-                return ;
+    int fd = open(echo_paths[sensor_index], O_RDONLY);
+    if (fd < 0){
+        perror("Failed to open file");
+        return -1;
+    }
+
+    char buf[32] = {0};
+    long t = -1;
+    buf[0] = c;
+    while (buf[0] == c){
+        int b = read(fd, buf, sizeof(buf));
+        if (!b){
+        	printf("closing..\n");
+        	close(fd);
+        	fd = open(echo_paths[sensor_index], O_RDONLY);
+            continue;
         }
 
-        b = read(fd, buf, sizeof(buf));
-        if (b <= 0){
-                perror("read:");
-                close(fd);
-                goto wait;
+        if (b < 0){
+            perror("read:");
+            goto close_fd;
         }
-	t = cycles_us();
-        close(fd);
-        if (buf[0] == c) {
-                goto wait;
-        }
-	return t;
+
+        for (int i = 0; i < sizeof (buf); i++)
+            printf("%d ", buf[i]);
+        printf("\n");
+    }
+
+    t = cycles_us();
+
+close_fd:
+    close(fd);
+out:
+    return t;
 }
 
-int main(int argc,char *argv[])
+int main(int argc, char *argv[])
 {
-	int i;
-	int sleep_us;
-	long s, e, dt_us, tmp;
-	float supersonic_speed_us = 0.0343;// centimeter/microsecond;	
-	float distance;
+    if (argc < 2) {
+        printf("%s <wait time us>\n",argv[0]);
+        return -1;
+    }
 
-	if (argc < 2) {
-		printf("%s <wait time us>\n",argv[0]);
-		return -1;
-	}
+    /* trigger duration in micro seconds */
+    int sleep_us = atoi(argv[1]);
 
-	/* trigger duration in micro seconds */
-	sleep_us = atoi(argv[1]);
-	trig("1\n");
+    /* Trigger a pulse sleep_us long */
+    trig("1\n", sleep_us, WHITE_SENSOR_INDEX);
 
-	// wait trigger
-	usleep(sleep_us);
+    printf("Going to wait for echo 0\n");
+    long start = wait_echo('0', WHITE_SENSOR_INDEX);
+    if (start < 0){
+        printf("Error in waiting for echo 0\n");
+        return -1;
+    }
 
-	trig("0\n");
-	s =  cycles_us();
+    printf("Going to wait for echo 1\n");
+    long end  = wait_echo('1', WHITE_SENSOR_INDEX);
+    if (end < 0){
+        printf("Error in waiting for echo 1\n");
+        return -1;
+    }
 
-	tmp = wait_echo('0');
-	if (tmp != 0)
-		s = tmp;
-	e =  cycles_us();
-	tmp  = wait_echo('1');
-	if (tmp != 0)
-		e = tmp;
+    long dt_us = (end - start);
 
-	dt_us = (e - s);
+    float distance = ((float)dt_us * ULTRASONIC_SPEED_US) / 2.0;
 
-	distance  = ((float)dt_us * supersonic_speed_us)/2;
-	
-	printf("distance %fcm dt=%ld\n",
-		distance, dt_us);
+    printf("Distance %fcm dt=%ld\n", distance, dt_us);
+
+    return 0;
 }
