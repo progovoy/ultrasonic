@@ -84,21 +84,25 @@ out:
 
 long wait_echo(char c, int sensor_index)
 {
+    long err = -1;
     int fd = open(echo_paths[sensor_index], O_RDONLY);
     if (fd < 0){
         perror("Failed to open file");
-        return -1;
+        goto out_err;
     }
 
     char buf[32] = {0};
-    long t = -1;
     buf[0] = c;
     while (buf[0] == c){
         int b = read(fd, buf, sizeof(buf));
         if (!b){
-        	printf("closing..\n");
-        	close(fd);
-        	fd = open(echo_paths[sensor_index], O_RDONLY);
+            close(fd);
+            fd = open(echo_paths[sensor_index], O_RDONLY);
+            if (fd < 0){
+                perror("Failed to open file inside loop");
+                goto out_err;
+            }
+
             continue;
         }
 
@@ -106,18 +110,14 @@ long wait_echo(char c, int sensor_index)
             perror("read:");
             goto close_fd;
         }
-
-        for (int i = 0; i < sizeof (buf); i++)
-            printf("%d ", buf[i]);
-        printf("\n");
     }
 
-    t = cycles_us();
+    return cycles_us();
 
 close_fd:
     close(fd);
-out:
-    return t;
+out_err:
+    return err;
 }
 
 int main(int argc, char *argv[])
@@ -133,14 +133,14 @@ int main(int argc, char *argv[])
     /* Trigger a pulse sleep_us long */
     trig("1\n", sleep_us, WHITE_SENSOR_INDEX);
 
-    printf("Going to wait for echo 0\n");
+    /* wait untill there is no zeroes and get the time */
     long start = wait_echo('0', WHITE_SENSOR_INDEX);
     if (start < 0){
         printf("Error in waiting for echo 0\n");
         return -1;
     }
 
-    printf("Going to wait for echo 1\n");
+    /* wait untill there is no ones and get the time */
     long end  = wait_echo('1', WHITE_SENSOR_INDEX);
     if (end < 0){
         printf("Error in waiting for echo 1\n");
